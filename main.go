@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"google.golang.org/api/gmail/v1"
 	"io"
 	"log"
 	"net/http"
@@ -52,8 +53,8 @@ func (app *App) handlePubSubMessage(w http.ResponseWriter, r *http.Request) {
 
 	log.Println(gmailWatchNotification)
 	// Fetch the Gmail History List and send the starting history ID
-	app.fetchGmailHistory(6268636)
-	// Process the
+	historySlice := app.fetchGmailHistory(6268636)
+	fmt.Println(historySlice)
 
 }
 
@@ -76,13 +77,13 @@ func parsePubSubMessage(body []byte) (*GmailWatchNotification, error) {
 	return &notification, err
 }
 
-func (app *App) fetchGmailHistory(historyId uint64) {
+func (app *App) fetchGmailHistory(historyId uint64) []*gmail.History {
 	history, err := app.GmailService.Users.History.List("me").StartHistoryId(historyId).HistoryTypes("messageAdded").Do()
 	if err != nil {
 		log.Println(err)
 	}
-	data, _ := json.MarshalIndent(history, "", "  ")
-	log.Println(string(data))
+	return history.History
+
 }
 
 func main() {
