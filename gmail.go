@@ -10,7 +10,8 @@ import (
 )
 
 type App struct {
-	GmailService *gmail.Service
+	GmailService     *gmail.Service
+	CurrentHistoryId uint64
 }
 
 func NewApp(clientID, clientSecret, refreshToken string) (*App, error) {
@@ -28,9 +29,16 @@ func NewApp(clientID, clientSecret, refreshToken string) (*App, error) {
 	client := config.Client(context.Background(), token)
 
 	svc, err := gmail.NewService(context.Background(), option.WithHTTPClient(client))
+
 	if err != nil {
 		return nil, err
 	}
 
-	return &App{GmailService: svc}, nil
+	profile, err := svc.Users.GetProfile("me").Do()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &App{GmailService: svc, CurrentHistoryId: profile.HistoryId}, nil
 }

@@ -2,28 +2,16 @@ package main
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"google.golang.org/api/gmail/v1"
 	"io"
 	"log"
 	"net/http"
 	"os"
+
+	"google.golang.org/api/gmail/v1"
 )
 
-type PubSubMessage struct {
-	Message struct {
-		Data string `json:"data"`
-		ID   string `json:"messageId"`
-	} `json:"message"`
-	Subscription string `json:"subscription"`
-}
-
-type GmailWatchNotification struct {
-	EmailAddress string
-	HistoryId    uint64
-}
-
+// End point for health check
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	log.Println("✅ HealthCheck Endpoint hit!")
 
@@ -33,57 +21,64 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 
 	// IMPORTANT: Pub/Sub expects 2xx
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintln(w, "ok")
+	_, err := fmt.Fprintln(w, "ok")
+	if err != nil {
+		return
+	}
 }
 
+// Endpoint to handlePubSubMessage from Google API
 func (app *App) handlePubSubMessage(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+	log.Println("Handle Endpoint hit!")
+
+	_, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
 
-	// Parse the content and return gmailWatchNotification
-	gmailWatchNotification, err := parsePubSubMessage(body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	log.Println(gmailWatchNotification)
 	// Fetch the Gmail History List and send the starting history ID
-	historySlice := app.fetchGmailHistory(6268636)
-	fmt.Println(historySlice)
+	historySlice := app.fetchGmailHistory(app.CurrentHistoryId)
+	// Process the Gmail History
+	app.processGmailhistories(historySlice)
 
-}
-
-func parsePubSubMessage(body []byte) (*GmailWatchNotification, error) {
-	var msg PubSubMessage
-	// Turn the body into a type of PubSubMessage
-	if err := json.Unmarshal(body, &msg); err != nil {
-		return nil, err
-	}
-	// Decode the base64 encoding to a human-readable string
-	data, err := base64.StdEncoding.DecodeString(msg.Message.Data)
-	if err != nil {
-		return nil, err
-	}
-
-	var notification GmailWatchNotification
-	if err := json.Unmarshal(data, &notification); err != nil {
-		return nil, err
-	}
-	return &notification, err
 }
 
 func (app *App) fetchGmailHistory(historyId uint64) []*gmail.History {
-	history, err := app.GmailService.Users.History.List("me").StartHistoryId(historyId).HistoryTypes("messageAdded").Do()
+	history, err := app.GmailService.Users.History.List("me").StartHistoryId(historyId).HistoryTypes("messageAdded").LabelId("Label_1547646376766633227").Do()
 	if err != nil {
 		log.Println(err)
 	}
 	return history.History
 
+}
+
+func (app *App) processGmailhistories(historySlice []*gmail.History) {
+	// Loop through each History
+	for _, history := range historySlice {
+		for _, messageAdded := range history.MessagesAdded {
+			messageID := messageAdded.Message.Id
+			msg, err := app.GmailService.Users.Messages.Get("me", messageID).Do()
+			if err != nil {
+				log.Println(err)
+			}
+			// An email can have multiple parts (plain-text, HTML)
+			for _, part := range msg.Payload.Parts {
+				if part.MimeType == "text/html" { // We want the HTML
+					data, err := base64.URLEncoding.DecodeString(part.Body.Data)
+					if err != nil {
+						log.Println(err)
+						continue
+					}
+					amount, recipient := extractTransactionDetails(string(data))
+					log.Printf("Amount: %s, To: %s", amount, recipient)
+				}
+			}
+
+		}
+		app.CurrentHistoryId = history.Id
+	}
 }
 
 func main() {
@@ -92,6 +87,7 @@ func main() {
 		os.Getenv("GMAIL_CLIENT_SECRET"),
 		os.Getenv("GMAIL_REFRESH_TOKEN"),
 	)
+
 	if err != nil {
 		log.Fatal(err)
 	}
