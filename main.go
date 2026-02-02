@@ -13,6 +13,19 @@ import (
 	"google.golang.org/api/gmail/v1"
 )
 
+type TelegramResponse struct {
+	CallbackQuery struct {
+		ID      string `json:"id"`
+		Data    string `json:"data"`
+		Message struct {
+			MessageID int `json:"message_id"`
+			Chat      struct {
+				ID int64 `json:"id"`
+			} `json:"chat"`
+		} `json:"message"`
+	} `json:"callback_query"`
+}
+
 // End point for health check
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	log.Println("✅ HealthCheck Endpoint hit!")
@@ -61,9 +74,9 @@ func (app *App) sendTransactionPrompts(transactionBuf []Transaction) {
 			"reply_markup": map[string]interface{}{
 				"inline_keyboard": [][]map[string]string{
 					{
-						{"text": "🍔 Food", "callback_data": "food"},
-						{"text": "🧑 Personal", "callback_data": "personal"},
-						{"text": "🚗 Transportation", "callback_data": "transportation"},
+						{"text": "🍔 Food", "callback_data": fmt.Sprintf("food|%s|%s", txn.Amount, txn.Recipient)},
+						{"text": "🧑 Personal", "callback_data": fmt.Sprintf("personal|%s|%s", txn.Amount, txn.Recipient)},
+						{"text": "🚗 Transportation", "callback_data": fmt.Sprintf("transportation|%s|%s", txn.Amount, txn.Recipient)},
 					},
 				},
 			},
@@ -125,6 +138,44 @@ func (app *App) processGmailHistories(historySlice []*gmail.History) []Transacti
 	return transactionBuf
 }
 
+func (app *App) handleTelegramCallback(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var response TelegramResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	log.Printf("%+v", response)
+
+	expenses := extractTelegramResponse(response)
+	log.Printf("%+v", expenses)
+
+	// Send to Notion API
+
+}
+
+//	func updateNotionDatabase(expenses Expenses) {
+//		notionKey := os.Getenv("NOTION_API_KEY")
+//
+//		categoryMap := map[string]string{
+//			"food":           "183de7c8610e8095ac4fd48ce0005e65",
+//			"personal":       "183de7c8610e80ec9cfcffd8d6ccd192",
+//			"transportation": "183de7c8610e80648072d0a9c6c54e57",
+//		}
+//		categoryID := categoryMap[expenses.category] // Get the categoryID
+//		amount, err := processAmount(expenses.amount)
+//		if err != nil {
+//			return err
+//		}
+//
+//		url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+//	}
 func main() {
 	app, err := NewApp(
 		os.Getenv("GMAIL_CLIENT_ID"),
@@ -138,6 +189,7 @@ func main() {
 
 	http.HandleFunc("/health", healthCheck)
 	http.HandleFunc("/handlePubSub", app.handlePubSubMessage)
+	http.HandleFunc("/telegramCallback", app.handleTelegramCallback)
 	port := "8080"
 	log.Println("🚀 Listening on port", port)
 

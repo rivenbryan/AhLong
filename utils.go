@@ -1,9 +1,16 @@
 package main
 
-import "regexp"
+import (
+	"regexp"
+	"strconv"
+	"strings"
+)
 
 type Transaction struct {
 	Amount, Recipient string
+}
+type Expenses struct {
+	category, amount, recipient string
 }
 
 func extractTransactionDetails(htmlBody string) Transaction {
@@ -24,4 +31,20 @@ func extractTransactionDetails(htmlBody string) Transaction {
 	return Transaction{
 		amount, recipient,
 	}
+}
+
+func extractTelegramResponse(response TelegramResponse) Expenses {
+	parts := strings.Split(response.CallbackQuery.Data, "|")
+
+	category := parts[0]
+	amount := parts[1]
+	recipient := parts[2]
+
+	return Expenses{category, amount, recipient}
+}
+
+func processAmount(amount string) (float64, error) {
+	amountStr := strings.TrimPrefix(amount, "SGD")
+	amt, err := strconv.ParseFloat(amountStr, 64)
+	return amt, err
 }
