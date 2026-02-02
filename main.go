@@ -39,9 +39,11 @@ func (app *App) handlePubSubMessage(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	// Fetch the Gmail History List and send the starting history ID
-	historySlice := app.fetchGmailHistory(app.CurrentHistoryId)
+	historyBuf := app.fetchGmailHistory(app.CurrentHistoryId)
 	// Process the Gmail History
-	app.processGmailhistories(historySlice)
+	transactionBuf := app.processGmailHistories(historyBuf)
+	// Sends Transaction Slice to Telegram Bot
+	log.Println(transactionBuf)
 
 }
 
@@ -54,7 +56,8 @@ func (app *App) fetchGmailHistory(historyId uint64) []*gmail.History {
 
 }
 
-func (app *App) processGmailhistories(historySlice []*gmail.History) {
+func (app *App) processGmailHistories(historySlice []*gmail.History) []Transaction {
+	var transactionBuf []Transaction
 	// Loop through each History
 	for _, history := range historySlice {
 		for _, messageAdded := range history.MessagesAdded {
@@ -71,14 +74,16 @@ func (app *App) processGmailhistories(historySlice []*gmail.History) {
 						log.Println(err)
 						continue
 					}
-					amount, recipient := extractTransactionDetails(string(data))
-					log.Printf("Amount: %s, To: %s", amount, recipient)
+					transaction := extractTransactionDetails(string(data))
+					transactionBuf = append(transactionBuf, transaction)
+					log.Printf("Amount: %s, To: %s", transaction.Amount, transaction.Recipient)
 				}
 			}
 
 		}
 		app.CurrentHistoryId = history.Id
 	}
+	return transactionBuf
 }
 
 func main() {
