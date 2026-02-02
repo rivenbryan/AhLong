@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -43,8 +45,45 @@ func (app *App) handlePubSubMessage(w http.ResponseWriter, r *http.Request) {
 	// Process the Gmail History
 	transactionBuf := app.processGmailHistories(historyBuf)
 	// Sends Transaction Slice to Telegram Bot
-	log.Println(transactionBuf)
+	app.sendTransactionPrompts(transactionBuf)
 
+}
+
+func (app *App) sendTransactionPrompts(transactionBuf []Transaction) {
+	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	chatID := os.Getenv("TELEGRAM_CHAT_ID")
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+
+	for _, txn := range transactionBuf {
+		payload := map[string]interface{}{
+			"chat_id": chatID,
+			"text":    fmt.Sprintf("💸 PayLah/PayNow Transaction Detected\n\nTo: %s\nAmount: %s", txn.Recipient, txn.Amount),
+			"reply_markup": map[string]interface{}{
+				"inline_keyboard": [][]map[string]string{
+					{
+						{"text": "🍔 Food", "callback_data": "food"},
+						{"text": "🧑 Personal", "callback_data": "personal"},
+						{"text": "🚗 Transportation", "callback_data": "transportation"},
+					},
+				},
+			},
+		}
+
+		body, err := json.Marshal(payload)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		defer resp.Body.Close()
+
+		log.Printf("Telegram response status: %s", resp.Status)
+	}
 }
 
 func (app *App) fetchGmailHistory(historyId uint64) []*gmail.History {
