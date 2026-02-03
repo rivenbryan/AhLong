@@ -8,7 +8,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
+
+const deleteDelay = 10 * time.Second
 
 type TelegramResponse struct {
 	CallbackQuery struct {
@@ -54,18 +57,38 @@ func (app *App) handleTelegramCallback(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var response TelegramResponse
-	if err := json.Unmarshal(body, &response); err != nil {
+	if err = json.Unmarshal(body, &response); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
-	log.Printf("%+v", response)
 
 	expenses := extractTelegramResponse(response)
-	err = updateNotionDatabase(expenses) // Send to Notion API
-	if err != nil {
+
+	if err = updateNotionDatabase(expenses); err != nil {
 		log.Println(err)
+		return
 	}
 
+	msg := fmt.Sprintf("✅ Logged: %s\nRecipient: %s\nAmount: %s", expenses.category, expenses.recipient, expenses.amount)
+	messageID, err := sendTelegramMessage(msg)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// The first message: We trigger from our Go Server
+	if err = deleteTelegramMessage(response.CallbackQuery.Message.MessageID); err != nil {
+		log.Println(err)
+		return
+	}
+
+	// The second message: Successful message that has to be wrapped into go-routine (we don't want to block and wait for req to finish)
+	go func(messageID int) {
+		time.Sleep(deleteDelay)
+		if err = deleteTelegramMessage(messageID); err != nil {
+			log.Println(err)
+		}
+	}(*messageID)
 }
 
 func createTelegramPayload(txn Transaction) ([]byte, error) {
@@ -86,4 +109,62 @@ func createTelegramPayload(txn Transaction) ([]byte, error) {
 
 	return json.Marshal(payload)
 
+}
+
+func sendTelegramMessage(msg string) (*int, error) {
+	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	chatID := os.Getenv("TELEGRAM_CHAT_ID")
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+
+	payload := map[string]string{
+		"chat_id": chatID,
+		"text":    msg,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Result struct {
+			MessageID int `json:"message_id"`
+		} `json:"result"`
+	}
+
+	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result.Result.MessageID, nil
+
+}
+
+func deleteTelegramMessage(messageID int) error {
+	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	chatID := os.Getenv("TELEGRAM_CHAT_ID")
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/deleteMessage", botToken)
+
+	payload := map[string]interface{}{
+		"chat_id":    chatID,
+		"message_id": messageID,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+
+	return nil
 }
