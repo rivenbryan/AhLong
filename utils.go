@@ -14,8 +14,8 @@ type Expenses struct {
 }
 
 func extractTransactionDetails(htmlBody string) Transaction {
-	amountRe := regexp.MustCompile(`Amount:</td>\s*<td>(.*?)</td>`)
-	recipientRe := regexp.MustCompile(`To:</td>\s*<td>(.*?)</td>`)
+	amountRe := regexp.MustCompile(`Amount:</td>\s*<td[^>]*>(.*?)</td>`)
+	recipientRe := regexp.MustCompile(`To:</td>\s*<td[^>]*>(.*?)</td>`)
 
 	var amount string
 	var recipient string
