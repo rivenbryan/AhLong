@@ -62,6 +62,14 @@ func (app *App) handleTelegramCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle cancel — just delete the message and return
+	if response.CallbackQuery.Data == "cancel" {
+		if err = deleteTelegramMessage(response.CallbackQuery.Message.MessageID); err != nil {
+			log.Println(err)
+		}
+		return
+	}
+
 	expenses := extractTelegramResponse(response)
 
 	if err = updateNotionDatabase(expenses); err != nil {
@@ -102,6 +110,9 @@ func createTelegramPayload(txn Transaction) ([]byte, error) {
 					{"text": "🍔 Food", "callback_data": fmt.Sprintf("food|%s|%s", txn.Amount, txn.Recipient)},
 					{"text": "🧑 Personal", "callback_data": fmt.Sprintf("personal|%s|%s", txn.Amount, txn.Recipient)},
 					{"text": "🚗 Transportation", "callback_data": fmt.Sprintf("transportation|%s|%s", txn.Amount, txn.Recipient)},
+				},
+				{
+					{"text": "❌ Cancel", "callback_data": "cancel"},
 				},
 			},
 		},
