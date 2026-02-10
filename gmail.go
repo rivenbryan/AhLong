@@ -29,6 +29,21 @@ func (app *App) handlePubSubMessage(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func (app *App) renewWatch(w http.ResponseWriter, r *http.Request) {
+	watchRequest := &gmail.WatchRequest{
+		TopicName: "projects/gmail-push-trigger/topics/gmail-email-events",
+		LabelIds:  []string{"Label_1547646376766633227"},
+	}
+	resp, err := app.GmailService.Users.Watch("me", watchRequest).Do()
+	if err != nil {
+		log.Println("Failed to renew watch:", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("Watch renewed, expires: %d", resp.Expiration)
+	w.WriteHeader(http.StatusOK)
+}
+
 func (app *App) fetchGmailHistory(historyId uint64) []*gmail.History {
 	history, err := app.GmailService.Users.History.List("me").StartHistoryId(historyId).HistoryTypes("messageAdded").LabelId("Label_1547646376766633227").Do()
 	if err != nil {

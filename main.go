@@ -39,6 +39,7 @@ func main() {
 	http.HandleFunc("/health", healthCheck)
 	http.HandleFunc("/handlePubSub", app.handlePubSubMessage)
 	http.HandleFunc("/telegramCallback", app.handleTelegramCallback)
+	http.HandleFunc("/renewWatch", app.renewWatch)
 
 	log.Println("🚀 Listening on port", port)
 
